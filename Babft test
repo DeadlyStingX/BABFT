@@ -1,1 +1,287 @@
-https://scripts.waza80.com/script/BuildABoat
+-- LocalScript
+
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- Starting point and final destinations
+local startPosition = Vector3.new(-50, 65, 800)
+local finalDestination = Vector3.new(-50, -360, 9488)
+local toChestIntermediate = Vector3.new(-50, 65, 3100)
+
+-- Coordinates range for teleportation (Z from 800 to 8700)
+local startZ = 800
+local endZ = 8700
+local incrementZ = 21  -- Changed for "Start" from 14 to 21
+local chestIncrementZ = 14  -- New variable for chest teleportation
+
+-- Region coordinates for check
+local x1, y1, z1 = -620, -11, 700
+local x2, y2, z2 = 490, 59, -830
+
+-- Teleportation speed and flying variables
+local speed = 0.05
+local flying = false
+local teleportationActive = false
+local moveDirection = Vector3.new()
+
+-- Track last active operation
+local lastActiveOperation = nil
+
+-- Stores all created connections to allow full reset
+local connections = {}
+
+-- Create and configure BodyGyro and BodyVelocity
+local bodyGyro, bodyVelocity
+
+-- Function to start flying
+local function startFlying()
+    flying = true
+    bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(400000, 400000, 400000)
+    bodyGyro.CFrame = character.HumanoidRootPart.CFrame
+    bodyGyro.Parent = character.HumanoidRootPart
+
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(400000, 400000, 400000)
+    bodyVelocity.Velocity = Vector3.new(0, 0, 0)  -- No movement initially
+    bodyVelocity.Parent = character.HumanoidRootPart
+
+    -- Update flying controls
+    local flyConnection = game:GetService("RunService").RenderStepped:Connect(function()
+        if flying then
+            local camera = workspace.CurrentCamera
+            local forward = camera.CFrame.LookVector * moveDirection.Z
+            local right = camera.CFrame.RightVector * moveDirection.X
+            local up = Vector3.new(0, moveDirection.Y, 0)
+            bodyVelocity.Velocity = (forward + right + up) * 50
+            bodyGyro.CFrame = camera.CFrame
+        end
+    end)
+    table.insert(connections, flyConnection)
+end
+
+-- Function to stop flying
+local function stopFlying()
+    flying = false
+    if bodyGyro then bodyGyro:Destroy() end
+    if bodyVelocity then bodyVelocity:Destroy() end
+end
+
+-- Function to check if the player is inside the region
+local function isInRegion()
+    local playerPos = character.HumanoidRootPart.Position
+    return playerPos.X >= math.min(x1, x2) and playerPos.X <= math.max(x1, x2) and
+           playerPos.Y >= math.min(y1, y2) and playerPos.Y <= math.max(y1, y2) and
+           playerPos.Z >= math.min(z1, z2) and playerPos.Z <= math.max(z1, z2)
+end
+
+-- Function to teleport the player through Z coordinates
+local function teleportThroughZ(startZ, endZ, incrementValue)
+    for z = startZ, endZ, incrementValue do
+        if not teleportationActive then return end
+        character:SetPrimaryPartCFrame(CFrame.new(-50, 65, z))
+        wait(speed)
+    end
+end
+
+-- Function to teleport the player to the final destination
+local function teleportToFinalDestination()
+    if not teleportationActive then return end
+    character:SetPrimaryPartCFrame(CFrame.new(finalDestination))
+    wait(1)  -- Wait before checking the region
+end
+
+-- Function to teleport the player to the chest (with intermediate stop)
+local function teleportToChest()
+    teleportationActive = true
+    lastActiveOperation = "chest"
+    -- Start flying and teleport to intermediate position
+    startFlying()
+    teleportThroughZ(startZ, 3100, chestIncrementZ)
+
+    -- After reaching the intermediate position, teleport to the final destination
+    if teleportationActive then
+        character:SetPrimaryPartCFrame(CFrame.new(finalDestination))
+    end
+    stopFlying()
+end
+
+-- Main logic to handle teleportation, region check, and loop control
+local function handleTeleportation()
+    lastActiveOperation = "start"
+    -- Start flying and teleportation
+    startFlying()
+    
+    -- Teleport through Z coordinates
+    teleportThroughZ(startZ, endZ, incrementZ)
+    
+    -- After reaching Z=8700, teleport to the chest (final destination)
+    teleportToFinalDestination()
+    
+    -- Wait to ensure the player reaches the region and isn't immediately sent back
+    while teleportationActive and not isInRegion() do
+        wait(1)  -- Stay in the loop until the player is inside the region
+    end
+    
+    -- After reaching the region, teleport the player back to the starting position
+    if teleportationActive then
+        character:SetPrimaryPartCFrame(CFrame.new(startPosition))
+    end
+    wait(1)  -- Wait to ensure the teleportation is complete
+end
+
+-- Main loop to trigger teleportation sequence repeatedly
+local function startTeleportationSequence()
+    teleportationActive = true
+    while teleportationActive do
+        -- Check if the player is in the region
+        if isInRegion() then
+            -- Only start the teleportation sequence if the player is inside the region
+            handleTeleportation()
+        end
+        wait(2)  -- Delay before checking again
+    end
+end
+
+local function stopTeleportationSequence()
+    teleportationActive = false
+    lastActiveOperation = nil
+    stopFlying()
+end
+
+-- Function to recreate the GUI
+local function recreateGui()
+    -- Create a ScreenGui and Frame (rectangle)
+    local screenGui = Instance.new("ScreenGui", game.Players.LocalPlayer:WaitForChild("PlayerGui"))
+    local rectangle = Instance.new("Frame", screenGui)
+    rectangle.Size = UDim2.new(0, 300, 0, 190)
+    rectangle.Position = UDim2.new(0.5, -150, 0.5, -95)
+    rectangle.BackgroundColor3 = Color3.fromRGB(95, 95, 95)
+    rectangle.BackgroundTransparency = 0.5
+
+    -- Add rounded corners and outline to the rectangle
+    Instance.new("UICorner", rectangle).CornerRadius = UDim.new(0, 45)
+    local stroke = Instance.new("UIStroke", rectangle)
+    stroke.Thickness = 3
+    stroke.Color = Color3.fromRGB(40, 40, 40)
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+    -- Create a TextLabel for placeholder text
+    local placeholder = Instance.new("TextLabel", rectangle)
+    placeholder.Size = UDim2.new(1, -20, 0, 30)
+    placeholder.Position = UDim2.new(0, 10, 0, 2)
+    placeholder.Text = "V3N0M_V0RT3X"
+    placeholder.BackgroundTransparency = 1
+    placeholder.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Instance.new("UICorner", placeholder).CornerRadius = UDim.new(0, 25)
+
+    -- Add a separator line
+    local separatorLine = Instance.new("Frame", rectangle)
+    separatorLine.Size = UDim2.new(1, -20, 0, 0.8)
+    separatorLine.Position = UDim2.new(0, 10, 0, 34)
+    separatorLine.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+
+    -- Create a ScrollingFrame for buttons
+    local scrollingFrame = Instance.new("ScrollingFrame", rectangle)
+    scrollingFrame.Size = UDim2.new(1, -20, 1, -50)
+    scrollingFrame.Position = UDim2.new(0, 10, 0, 42)
+    scrollingFrame.BackgroundTransparency = 1
+    scrollingFrame.CanvasSize = UDim2.new(0, 0, 2, 0)
+
+    -- Create buttons inside the ScrollingFrame
+    local function createButton(parent, position, text, action)
+        local button = Instance.new("TextButton", parent)
+        button.Size = UDim2.new(0.8, 0, 0, 30)
+        button.Position = position
+        button.Text = text
+        button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Instance.new("UICorner", button).CornerRadius = UDim.new(0, 25)
+        button.MouseButton1Click:Connect(action)
+        return button
+    end
+
+    -- Function to completely reset the script
+    local function destroyScript()
+        -- Stop all active operations
+        teleportationActive = false
+        lastActiveOperation = nil
+        stopFlying()
+
+        -- Disconnect and clear all connections
+        for _, connection in ipairs(connections) do
+            connection:Disconnect()
+        end
+        connections = {}
+
+        -- Disconnect character added event
+        if characterAddedConnection then
+            characterAddedConnection:Disconnect()
+        end
+
+        -- Destroy GUI and any remaining instances
+        if screenGui then screenGui:Destroy() end
+        if bodyGyro then bodyGyro:Destroy() end
+        if bodyVelocity then bodyVelocity:Destroy() end
+
+        -- Clear local variables
+        player = nil
+        character = nil
+        humanoid = nil
+
+        -- Destroy the script itself
+        script:Destroy()
+    end
+
+    createButton(scrollingFrame, UDim2.new(0.1, 0, 0.02, 0), "Start", startTeleportationSequence)
+    createButton(scrollingFrame, UDim2.new(0.1, 0, 0.11, 0), "Stop", stopTeleportationSequence)
+    createButton(scrollingFrame, UDim2.new(0.1, 0, 0.2, 0), "To Chest", teleportToChest)
+
+    -- Function to hide/show the GUI
+    local function toggleGuiVisibility()
+        screenGui.Enabled = not screenGui.Enabled
+    end
+
+    -- Create Hide GUI and Destroy GUI buttons
+    createButton(scrollingFrame, UDim2.new(0.1, 0, 0.29, 0), "Hide GUI", toggleGuiVisibility)
+    createButton(scrollingFrame, UDim2.new(0.1, 0, 0.38, 0), "Destroy GUI", destroyScript)
+
+    -- User input handling for hiding/showing the GUI (Ctrl + Z)
+    local userInputService = game:GetService("UserInputService")
+    local hideGuiConnection = userInputService.InputBegan:Connect(function(input, gameProcessed)
+        if not gameProcessed then
+            if input.KeyCode == Enum.KeyCode.Z and userInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                toggleGuiVisibility()
+            end
+        end
+    end)
+    table.insert(connections, hideGuiConnection)
+
+    return screenGui
+end
+
+-- Initial GUI creation
+local screenGui = recreateGui()
+
+-- Function to handle character respawn
+local function onCharacterAdded(newCharacter)
+    character = newCharacter
+    humanoid = character:WaitForChild("Humanoid")
+
+    -- Recreate the GUI if it was destroyed
+    if not screenGui or not screenGui.Parent then
+        screenGui = recreateGui()
+    end
+
+    -- If there was an active operation before death, restart it
+    if lastActiveOperation == "start" then
+        startTeleportationSequence()
+    elseif lastActiveOperation == "chest" then
+        teleportToChest()
+    end
+end
+
+-- Connect the character added event and store the connection
+local characterAddedConnection = player.CharacterAdded:Connect(onCharacterAdded)
+table.insert(connections, characterAddedConnection)
